@@ -1,0 +1,672 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
+<meta name="apple-mobile-web-app-title" content="DroidHub">
+<meta name="theme-color" content="#f4f6f8" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#14181e" media="(prefers-color-scheme: dark)">
+<title>DroidHub</title>
+<style>
+  :root { --fg: #202938; --muted: #748092; --bg: #f4f6f8; --card: #fff; --line: #dfe5ec;
+          --accent: #2563eb; --accent-soft: #edf3ff; --ok: #248458; --ok-soft: #e5f4ec;
+          --bad: #b84d46; --bad-soft: #fbecea; --veil: rgba(18, 24, 34, .88);
+          --shadow: 0 12px 36px rgba(24, 39, 60, .12); --ar: 1080 / 2340; --head: 64px; --foot: 60px; --bottom: 12px; }
+  @media (prefers-color-scheme: dark) {
+    :root { --fg: #e8edf5; --muted: #96a2b5; --bg: #14181e; --card: #1e242d; --line: #303947;
+            --accent: #8cb2ff; --accent-soft: #263750; --ok: #72d3a0; --ok-soft: #203b30;
+            --bad: #f0958e; --bad-soft: #402b2b; --veil: rgba(12, 16, 23, .9);
+            --shadow: 0 12px 36px rgba(0, 0, 0, .4); }
+  }
+  * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+  html, body { height: 100%; }
+  body { margin: 0; overflow: hidden; background: var(--bg); color: var(--fg);
+         font: 14px/1.5 -apple-system, "PingFang SC", "Microsoft YaHei", sans-serif;
+         padding: env(safe-area-inset-top) 20px calc(var(--bottom) + env(safe-area-inset-bottom)); }
+  main { position: relative; height: 100%; display: flex; flex-direction: column; align-items: center; }
+  main:fullscreen { background: var(--bg); padding: env(safe-area-inset-top) 20px calc(var(--bottom) + env(safe-area-inset-bottom)); }
+  button { font: inherit; cursor: pointer; }
+  button:disabled { opacity: .4; cursor: default; }
+  button:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }
+  svg { width: 18px; height: 18px; flex: none; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
+  header { flex: none; width: 100%; max-width: 720px; height: var(--head); display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+  .brand { display: flex; align-items: center; gap: 9px; }
+  .brand-mark { display: grid; place-items: center; width: 30px; height: 30px; border-radius: 9px; background: var(--accent); color: var(--card); }
+  .brand-mark svg { width: 19px; height: 19px; }
+  h1 { font-size: 18px; font-weight: 650; letter-spacing: -.5px; margin: 0; }
+  .right { display: flex; align-items: center; gap: 8px; }
+  .tabs { display: flex; padding: 3px; border-radius: 10px; background: var(--card); border: 1px solid var(--line); }
+  .tabs[hidden] { display: none; }
+  .tabs button { display: inline-flex; align-items: center; justify-content: center; gap: 5px; min-width: 46px; min-height: 30px;
+                 border: 0; background: none; color: var(--muted); font-size: 12px; padding: 3px 10px; border-radius: 7px; }
+  .tabs button::before { content: ""; width: 5px; height: 5px; border-radius: 50%; background: var(--muted); opacity: .55; }
+  .tabs button[data-connected="true"]::before { background: var(--ok); opacity: 1; }
+  .tabs button.on { background: var(--accent-soft); color: var(--accent); font-weight: 650; }
+  .badge { display: inline-flex; align-items: center; gap: 6px; min-height: 32px; padding: 4px 11px; border-radius: 999px;
+           font-size: 12px; white-space: nowrap; background: var(--card); border: 1px solid var(--line); color: var(--muted); }
+  .badge::before { content: ""; width: 6px; height: 6px; border-radius: 50%; background: currentColor; }
+  .badge.ok { color: var(--ok); background: var(--ok-soft); border-color: transparent; }
+  .badge.bad { color: var(--bad); background: var(--bad-soft); border-color: transparent; }
+  .sound { display: inline-flex; align-items: center; gap: 5px; min-height: 34px; padding: 5px 10px; border: 1px solid var(--line);
+           border-radius: 10px; background: var(--card); color: var(--muted); font-size: 12px; white-space: nowrap; }
+  .sound svg { width: 15px; height: 15px; }
+  .sound[aria-pressed="false"] .sound-on, .sound[aria-pressed="true"] .sound-off { display: none; }
+  .sound[aria-pressed="true"] { color: var(--ok); background: var(--ok-soft); border-color: transparent; }
+  .header-tool { display: none; align-items: center; justify-content: center; width: 32px; min-height: 34px; padding: 5px;
+                 border: 1px solid var(--line); border-radius: 9px; background: var(--card); color: var(--muted); }
+  .header-tool[aria-expanded="true"] { color: var(--accent); background: var(--accent-soft); }
+
+  .stage { flex: 1; min-height: 0; width: 100%; display: flex; align-items: center; justify-content: center; }
+  .screen { position: relative; aspect-ratio: var(--ar);
+            width: min(100%, calc((100dvh - var(--head) - var(--foot) - var(--bottom) - env(safe-area-inset-top) - env(safe-area-inset-bottom)) * (var(--ar))));
+            border-radius: 16px; overflow: hidden; background: #111720; box-shadow: var(--shadow);
+            touch-action: none; user-select: none; -webkit-user-select: none; -webkit-touch-callout: none; cursor: pointer; }
+  .screen img { position: absolute; inset: 0; display: block; width: 100%; height: 100%; object-fit: contain; pointer-events: none; -webkit-user-drag: none; }
+  .screen img[hidden] { display: none; }
+  .veil { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; padding: 24px;
+          background: var(--veil); color: #fff; font-size: 13px; text-align: center; transition: opacity .2s; }
+  .veil.hide { opacity: 0; pointer-events: none; }
+  .empty { width: 100%; max-width: 280px; }
+  .empty > svg { width: 30px; height: 30px; margin-bottom: 14px; opacity: .65; }
+  .empty strong { display: block; font-size: 16px; font-weight: 600; }
+  .empty p { margin: 8px 0 0; color: #bec8d6; font-size: 12px; line-height: 1.8; overflow-wrap: anywhere; }
+  .retry { margin-top: 20px; padding: 8px 15px; border: 1px solid rgba(255, 255, 255, .25); border-radius: 9px; color: #fff; background: rgba(255, 255, 255, .08); }
+  .dot { position: absolute; width: 36px; height: 36px; margin: -18px 0 0 -18px; border-radius: 50%;
+         background: rgba(255, 255, 255, .35); border: 2px solid rgba(255, 255, 255, .85); pointer-events: none;
+         opacity: 0; transition: opacity .15s; }
+  .dot.on { opacity: 1; transition: none; }
+  footer { flex: none; height: var(--foot); display: flex; align-items: flex-end; max-width: 100%; }
+  .tools { display: flex; align-items: center; padding: 3px; gap: 2px; background: var(--card); border: 1px solid var(--line); border-radius: 12px; }
+  .tool { display: inline-flex; align-items: center; justify-content: center; gap: 6px; min-height: 40px; padding: 8px 12px; border: 0; border-radius: 8px; color: var(--muted); background: transparent; font-size: 12px; white-space: nowrap; }
+  .tool[hidden] { display: none; }
+  @media (hover: hover) { .tool:hover:not(:disabled), .sound:hover:not(:disabled) { background: var(--accent-soft); color: var(--accent); } }
+  .tool[aria-pressed="true"] { color: var(--accent); background: var(--accent-soft); }
+  .toast { position: fixed; z-index: 2; left: 50%; bottom: calc(var(--foot) + 20px + env(safe-area-inset-bottom)); transform: translateX(-50%); max-width: min(420px, calc(100% - 32px));
+           padding: 9px 14px; border-radius: 10px; background: var(--veil); color: #fff; font-size: 12px;
+           text-align: center; opacity: 0; transition: opacity .2s; pointer-events: none; }
+  .toast.on { opacity: 1; }
+  @media (max-width: 560px) {
+    :root { --head: 44px; --foot: 0px; --bottom: 4px; }
+    body, main:fullscreen { padding-left: 6px; padding-right: 6px; }
+    header { gap: 5px; }
+    .brand-mark { display: none; }
+    h1 { font-size: 14px; white-space: nowrap; }
+    .right { gap: 4px; min-width: 0; }
+    .tabs { padding: 2px; border-radius: 8px; flex: none; }
+    .tabs button { min-width: 31px; min-height: 30px; padding: 3px 5px; gap: 3px; }
+    .badge { min-height: 30px; padding: 3px 6px; font-size: 11px; gap: 4px; }
+    .sound { width: 32px; min-height: 34px; padding: 5px; justify-content: center; flex: none; }
+    #soundLabel { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+    .header-tool { display: inline-flex; flex: none; }
+    footer { display: none; position: absolute; top: calc(var(--head) + 4px); right: 0; height: auto; z-index: 3; box-shadow: var(--shadow); border-radius: 12px; }
+    main[data-tools-open="true"] footer { display: flex; }
+    footer #fullscreen { display: none; }
+    .tool { padding: 8px 9px; }
+  }
+  @media (max-height: 500px) and (min-width: 561px) { :root { --head: 48px; --foot: 48px; } }
+  main.view-full { --head: 0px; --foot: 0px; --bottom: 0px; position: fixed; inset: 0; z-index: 5; height: 100dvh;
+                   padding: env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left); background: #000; }
+  main.view-full header, main.view-full footer { display: none; }
+  main.view-full .screen { border-radius: 0; box-shadow: none; }
+  main.view-full .toast { bottom: calc(16px + env(safe-area-inset-bottom)); }
+  .full-exit { position: absolute; z-index: 4; top: calc(8px + env(safe-area-inset-top)); right: calc(8px + env(safe-area-inset-right));
+               display: inline-flex; align-items: center; gap: 5px; min-height: 36px; padding: 7px 10px; border: 1px solid rgba(255, 255, 255, .2);
+               border-radius: 10px; background: rgba(18, 24, 34, .8); color: #fff; font-size: 12px; }
+  .full-exit[hidden] { display: none; }
+  @media (prefers-reduced-motion: reduce) { .veil, .dot, .toast { transition: none; } }
+</style>
+</head>
+<body>
+<main data-tools-open="false">
+  <header>
+    <div class="brand"><span class="brand-mark" aria-hidden="true"><svg viewBox="0 0 24 24"><rect x="6" y="2" width="12" height="20" rx="3"/><path d="M10 5h4M11 19h2"/></svg></span><h1>DroidHub</h1></div>
+    <div class="right"><div class="tabs" id="tabs" role="group" aria-label="选择手机" hidden></div><button class="sound" id="sound" type="button" aria-label="开启声音" aria-pressed="false" disabled><svg class="sound-on" viewBox="0 0 24 24" aria-hidden="true"><path d="M11 5 6 9H3v6h3l5 4V5ZM15 8a6 6 0 0 1 0 8M18 5a10 10 0 0 1 0 14"/></svg><svg class="sound-off" viewBox="0 0 24 24" aria-hidden="true"><path d="M11 5 6 9H3v6h3l5 4V5ZM16 9l5 6M21 9l-5 6"/></svg><span id="soundLabel">声音关</span></button><span id="badge" class="badge" role="status">连接中</span><button class="header-tool" id="fullscreenMobile" type="button" aria-label="进入全屏" aria-pressed="false"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M8 3H3v5M16 3h5v5M21 16v5h-5M8 21H3v-5"/></svg></button><button class="header-tool" id="toolsToggle" type="button" aria-label="更多操作" aria-expanded="false" aria-controls="quickControls"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="5" cy="12" r="1"/><circle cx="12" cy="12" r="1"/><circle cx="19" cy="12" r="1"/></svg></button></div>
+  </header>
+  <div class="stage">
+    <div class="screen" id="screen">
+      <div class="veil" id="veil" role="status"><div class="empty"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="6" y="2" width="12" height="20" rx="3"/><path d="M10 5h4M11 19h2"/></svg><strong id="veilTitle">正在连接</strong><p id="veilDetail">正在获取手机画面</p><button class="retry" id="retry" type="button" hidden>刷新状态</button></div></div>
+      <div class="dot" id="dot"></div>
+    </div>
+  </div>
+  <footer id="quickControls"><div class="tools" role="group" aria-label="手机控制">
+    <button class="tool" id="back" type="button" data-key="BACK" disabled><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m10 5-7 7 7 7M3 12h12a6 6 0 0 1 6 6"/></svg>返回</button>
+    <button class="tool" id="home" type="button" data-key="HOME" disabled><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m3 10 9-7 9 7M5 9v11h5v-6h4v6h5V9"/></svg>主页</button>
+    <button class="tool" id="shot" type="button" disabled><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 4 7 7H3v13h18V7h-4l-2-3Z"/><circle cx="12" cy="13" r="4"/></svg><span id="shotLabel">截图</span></button>
+    <button class="tool" id="fullscreen" type="button" aria-label="进入全屏" aria-pressed="false"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M8 3H3v5M16 3h5v5M21 16v5h-5M8 21H3v-5"/></svg><span id="fullscreenLabel">全屏</span></button>
+  </div></footer>
+  <div class="toast" id="toast" role="status"></div>
+  <button class="full-exit" id="fullscreenExit" type="button" aria-label="退出全屏" hidden><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 8h5V3M16 3v5h5M21 16h-5v5M8 21v-5H3"/></svg>退出</button>
+</main>
+<script>
+// 登录过期或密码已修改时，任何请求返回 401 都转到登录页
+const nativeFetch = window.fetch.bind(window);
+window.fetch = async (...args) => {
+  const response = await nativeFetch(...args);
+  if (response.status === 401) location.replace('/auth?next=' + encodeURIComponent(location.pathname + location.search));
+  return response;
+};
+const $ = id => document.getElementById(id);
+const screenEl = $('screen'), veil = $('veil'), badge = $('badge'), dot = $('dot'), toast = $('toast'), tabs = $('tabs');
+let phoneSize = [1080, 2340], toastTimer = null, serial = null, phones = [];
+let serviceInstance = null, pollVersion = 0, pollController = null;
+let serviceReachable = false, screenshotBusy = false;
+const feeds = new Map();
+try { serial = localStorage.getItem('serial'); } catch (e) {}
+const q = (target = serial) => target ? '?serial=' + encodeURIComponent(target) : '';
+
+function paintControls() {
+  const connected = serviceReachable && phones.some(p => p.serial === serial && p.connected);
+  for (const button of document.querySelectorAll('[data-key]')) button.disabled = !connected || !feeds.get(serial)?.ready || !!heldByOther();
+  $('shot').disabled = !connected || screenshotBusy;
+  // 不采音的设备（虚拟机）只留关闭声音
+  const audible = phones.find(p => p.serial === serial)?.audio !== false;
+  $('sound').disabled = !(connected && audible) && !soundEnabled;
+}
+function setBadge(ok, text) {
+  badge.className = 'badge ' + (ok ? 'ok' : 'bad');
+  if (badge.textContent !== text) badge.textContent = text;
+  paintControls();
+}
+function showVeil(text, detail = '', retry = false) {
+  if ($('veilTitle').textContent !== text) $('veilTitle').textContent = text;
+  if ($('veilDetail').textContent !== detail) $('veilDetail').textContent = detail;
+  $('retry').hidden = !retry || !text;
+  veil.classList.toggle('hide', !text); veil.setAttribute('aria-hidden', String(!text));
+  paintControls();
+}
+function say(text) {
+  toast.textContent = text; toast.classList.add('on');
+  clearTimeout(toastTimer); toastTimer = setTimeout(() => toast.classList.remove('on'), 3000);
+}
+
+// 当前手机和最近另一台保留各自的 MJPEG 连接，切换只换显示；最多两路，后台全部断开。
+function startFeed(feed) {
+  clearTimeout(feed.retry); feed.retry = null; feed.ready = false; feed.failed = false;
+  if (feed.img.hasAttribute('src')) endStream(feed.client);
+  feed.client = Date.now().toString(36) + '-' + Math.random().toString(36).slice(2);
+  feed.instance = serviceInstance;
+  feed.since = phones.find(p => p.serial === feed.serial)?.since;
+  feed.img.src = '/stream' + q(feed.serial) + '&client=' + feed.client;
+}
+// WebKit（iPhone Safari）去掉 src 不会断开 MJPEG 连接，旧连接占满每个网站 6 条的上限后新画面要排队；
+// 请服务端按订阅标识结束连接
+function endStream(client) {
+  if (!client) return;
+  fetch('/stream/stop', { method: 'POST', keepalive: true, headers: { 'Content-Type': 'application/json' },
+                          body: JSON.stringify({ clients: [client] }) }).catch(() => {});
+}
+function stopFeed(feed) {
+  clearTimeout(feed.retry); feed.retry = null; feed.ready = false; feed.failed = false;
+  if (feed.img.hasAttribute('src')) endStream(feed.client);
+  feed.img.removeAttribute('src');
+}
+function getFeed(target) {
+  if (feeds.has(target)) return feeds.get(target);
+  const element = document.createElement('img');
+  element.alt = ''; element.hidden = true;
+  if (!element.isConnected) screenEl.insertBefore(element, veil);
+  const feed = { serial: target, img: element, ready: false, failed: false, retry: null };
+  feeds.set(target, feed);
+  element.addEventListener('load', () => {
+    if (!element.hasAttribute('src')) return;
+    if (!feed.ready) feed.readyAt = performance.now();
+    feed.ready = true; feed.failed = false;
+    if (target === serial) { frameGeometry(); showConnection(); }
+  });
+  element.addEventListener('error', () => {
+    if (!element.hasAttribute('src') || document.hidden) return;
+    feed.ready = false; feed.failed = true;
+    if (target === serial) showConnection();
+    feed.retry = setTimeout(() => {
+      if (feeds.get(target) !== feed || document.hidden || !phones.some(p => p.serial === target && p.connected)) return;
+      startFeed(feed);
+      if (target === serial) showConnection();
+    }, 3000);
+  });
+  return feed;
+}
+function showConnection() {
+  const phone = phones.find(p => p.serial === serial), feed = feeds.get(serial);
+  if (!phone) { setBadge(false, '未连接'); showVeil('没有发现手机', '连接手机后，设备会自动出现在这里。', true); }
+  else if (!phone.connected) {
+    setBadge(false, '未连接');
+    const unauthorized = /unauthorized/i.test(phone.error || '');
+    showVeil(unauthorized ? '等待手机授权' : '手机未连接', unauthorized
+      ? '这次 USB 调试连接尚未通过验证，请查看手机上的授权提示。'
+      : '请检查手机和 USB 连接，恢复后会自动显示画面。', true);
+  }
+  else if (unlocking.has(serial)) { badge.className = 'badge'; badge.textContent = '连接中'; showVeil('正在解锁', '正在输入锁屏密码'); }
+  else if (feed?.failed) { setBadge(false, '未连接'); showVeil('画面暂时中断', '3 秒后自动重连，也可以刷新状态。', true); }
+  else if (feed?.ready) { const held = heldByOther(); setBadge(true, held ? held.owner + ' 使用中' : '已连接'); showVeil(''); }
+  else { badge.className = 'badge'; badge.textContent = '连接中'; showVeil('正在连接', '正在获取手机画面'); }
+}
+function connect(reconcile = false, polledAt = 0) {
+  if (document.hidden) {
+    release();
+    for (const feed of feeds.values()) stopFeed(feed);
+    syncSound();
+    return;
+  }
+  const candidates = [...feeds.keys()].reverse().concat(phones.map(p => p.serial));
+  const other = candidates.find(s => s !== serial && phones.some(p => p.serial === s && p.connected));
+  const keep = new Set([serial, other].filter(Boolean));
+  for (const [target, feed] of feeds) {
+    if (!keep.has(target)) { stopFeed(feed); feed.img.remove(); feeds.delete(target); }
+  }
+  for (const target of keep) {
+    const feed = getFeed(target), phone = phones.find(p => p.serial === target);
+    feed.img.removeAttribute('id'); feed.img.hidden = target !== serial;
+    if (target === serial) feed.img.id = 'img';
+    if (!phone?.connected || unlocking.has(target)) stopFeed(feed);
+    else if (reconcile && feed.img.hasAttribute('src') &&
+             (feed.instance !== serviceInstance || feed.since !== phone.since ||
+              (feed.ready && (['idle', 'stopping', 'error'].includes(phone.stream?.state) ||
+               // 出第一帧前发出的轮询可能还没看到这条订阅，不能据此判断它丢了
+               (Array.isArray(phone.stream?.clients) && !phone.stream.clients.includes(feed.client)
+                && polledAt > feed.readyAt))))) startFeed(feed);
+    else if (!feed.img.hasAttribute('src') && !feed.retry) startFeed(feed);
+  }
+  // 更新访问顺序，让多于两台时保留最近使用的那台。
+  if (feeds.has(serial)) { const feed = feeds.get(serial); feeds.delete(serial); feeds.set(serial, feed); }
+  frameGeometry();
+  showConnection();
+  syncSound();
+}
+document.addEventListener('visibilitychange', () => {
+  if (document.hidden) { cancelStatus(); connect(); }
+  else { unlockOnPoll = true; status(); }
+});
+window.addEventListener('pagehide', () => { cancelStatus(); release(); for (const feed of feeds.values()) stopFeed(feed); stopSound(); audioContext?.suspend().catch(() => {}); });
+window.addEventListener('pageshow', event => { if (event.persisted) status(); });
+
+// 接了不止一台就显示切换；选过的记在本机
+function pick(next) {
+  if (next === serial) { requestUnlock(); return; }
+  release();
+  serial = next;
+  try { localStorage.setItem('serial', serial); } catch (e) {}
+  renderPhones();
+  requestUnlock();
+  connect();
+}
+// 设了锁屏密码的设备：选中它、再点一次它、打开或回到网页时先解锁再出画面（没锁着服务端什么也不做）。
+// 网页一直开着时不自动解锁，设备到时间熄屏锁上就让它熄着。设备正在重连时等它连上再解
+const unlocking = new Set();
+let unlockOnPoll = true;
+function requestUnlock() {
+  const phone = phones.find(p => p.serial === serial);
+  if (phone?.connected) { unlockOnPoll = false; if (canUnlock(serial)) unlock(serial); }
+  else unlockOnPoll = true;
+}
+function canUnlock(target) {
+  const phone = phones.find(p => p.serial === target);
+  return !!(phone?.unlock && phone.connected && !heldByOther(target) && !unlocking.has(target));
+}
+async function unlock(target) {
+  unlocking.add(target);
+  const feed = feeds.get(target);
+  if (feed) stopFeed(feed);
+  if (target === serial) showConnection();
+  const controller = new AbortController(), timer = setTimeout(() => controller.abort(), 30000);
+  try {
+    await lease(target, controller.signal);
+    const r = await fetch('/unlock' + q(target) + '&owner=' + OWNER, { method: 'POST', signal: controller.signal,
+      headers: { 'Content-Type': 'application/json' }, body: '{}' });
+    if (!r.ok) throw new Error((await r.json().catch(() => ({}))).detail || '解锁失败');
+  } catch (e) { say(e.name === 'AbortError' ? '解锁超时' : '解锁失败：' + (e.message || '')); }
+  finally { clearTimeout(timer); unlocking.delete(target); connect(); status(); }
+}
+function renderPhones() {
+  tabs.hidden = phones.length < 2;
+  const existing = new Map([...tabs.children].map(button => [button.dataset.serial, button]));
+  phones.forEach((p, index) => {
+    const b = existing.get(p.serial) || document.createElement('button');
+    const name = p.name || p.serial;
+    if (b.textContent !== name) b.textContent = name;
+    b.type = 'button'; b.className = p.serial === serial ? 'on' : '';
+    b.dataset.serial = p.serial; b.dataset.connected = String(p.connected);
+    b.setAttribute('aria-pressed', String(p.serial === serial));
+    b.title = name + (p.connected ? ' · 已连接' : ' · 未连接');
+    b.onclick = () => pick(p.serial);
+    if (tabs.children[index] !== b) tabs.insertBefore(b, tabs.children[index] || null);
+    existing.delete(p.serial);
+  });
+  for (const b of existing.values()) b.remove();
+  const phone = phones.find(p => p.serial === serial);
+  document.title = 'DroidHub' + (phone ? ' · ' + (phone.name || phone.serial) : '');
+  if (phone?.size) phoneSize = phone.size;
+  frameGeometry();
+}
+function frameGeometry() {
+  const feed = feeds.get(serial), image = feed?.img;
+  const size = feed?.ready && image.naturalWidth && image.naturalHeight ? [image.naturalWidth, image.naturalHeight] : phoneSize;
+  const ratio = size[0] + ' / ' + size[1];
+  if (document.documentElement.style.getPropertyValue('--ar') !== ratio) {
+    release();
+    document.documentElement.style.setProperty('--ar', ratio);
+  }
+}
+// MJPEG 后续帧改变尺寸时通常不再触发 load；只在页面可见时检查当前画面的尺寸。
+setInterval(() => { if (!document.hidden) frameGeometry(); }, 100);
+function cancelStatus() {
+  pollVersion++;
+  pollController?.abort(); pollController = null;
+}
+async function status() {
+  if (document.hidden) return;
+  const version = ++pollVersion;
+  pollController?.abort();
+  const controller = pollController = new AbortController();
+  const timer = setTimeout(() => controller.abort(), 5000);
+  const polledAt = performance.now();
+  try {
+    const response = await fetch('/phones', { cache: 'no-store', signal: controller.signal });
+    if (!response.ok) throw new Error('服务未连接');
+    const all = await response.json();
+    if (version !== pollVersion || document.hidden || controller.signal.aborted) return;
+    if (!Array.isArray(all.phones)) throw new Error('手机状态无效');
+    const previous = phones.find(p => p.serial === serial), current = all.phones.find(p => p.serial === serial);
+    if (previous?.rotation !== current?.rotation || previous?.since !== current?.since || serviceInstance !== (all.instance ?? null)) release();
+    serviceInstance = all.instance ?? null;
+    serviceReachable = true;
+    phones = all.phones;
+    if (!phones.some(p => p.serial === serial)) { release(); serial = all.default; }
+    renderPhones();
+    if (unlockOnPoll) requestUnlock();
+    connect(true, polledAt);
+  } catch (e) {
+    if (version !== pollVersion || document.hidden) return;
+    serviceReachable = false;
+    release(); for (const feed of feeds.values()) stopFeed(feed);
+    stopSound();
+    setBadge(false, '未连接'); showVeil('服务暂时不可用', '正在自动重试，请检查网络连接。', true);
+  } finally {
+    clearTimeout(timer);
+    if (pollController === controller) pollController = null;
+  }
+}
+setInterval(() => { if (!document.hidden) status(); }, 5000);
+status();
+
+// HTTP 内网使用 Web Audio BufferSource 播放 PCM；仅采集当前手机，不使用麦克风。
+const soundButton = $('sound');
+let soundEnabled = false, audioContext = null, audioSession = null;
+function paintSound(connecting = false) {
+  const text = soundEnabled ? (connecting ? '声音…' : '声音开') : '声音关';
+  if ($('soundLabel').textContent !== text) $('soundLabel').textContent = text;
+  if (soundButton.getAttribute('aria-pressed') !== String(soundEnabled)) {
+    soundButton.setAttribute('aria-pressed', String(soundEnabled));
+    soundButton.setAttribute('aria-label', soundEnabled ? '关闭声音' : '开启声音');
+    paintControls();
+  }
+}
+function stopSound() {
+  const session = audioSession;
+  audioSession = null;
+  if (!session) return;
+  session.controller.abort();
+  session.reader?.cancel().catch(() => {});
+  for (const source of session.nodes) { try { source.stop(); } catch (e) {} }
+  session.nodes.clear();
+}
+function syncSound() {
+  const phone = phones.find(p => p.serial === serial);
+  if (!soundEnabled || document.hidden || !phone?.connected || phone.audio === false) {
+    stopSound(); audioContext?.suspend().catch(() => {}); paintSound();
+    return;
+  }
+  if (audioSession?.serial === serial) return;
+  stopSound();
+  const session = { serial, controller: new AbortController(), reader: null, nodes: new Set() };
+  audioSession = session;
+  paintSound(true);
+  playSound(session);
+}
+async function playSound(session) {
+  try {
+    const Context = window.AudioContext || window.webkitAudioContext;
+    if (!Context) throw new Error('浏览器不支持声音播放');
+    if (!audioContext) audioContext = new Context({ latencyHint: 'interactive' });
+    await audioContext.resume();
+    if (audioSession !== session) return;
+    const response = await fetch('/audio' + q(session.serial), { cache: 'no-store', signal: session.controller.signal });
+    if (!response.ok) throw new Error((await response.json().catch(() => ({}))).detail || '声音连接失败');
+    if (response.headers.get('X-Audio-Format') !== 's16le' || response.headers.get('X-Audio-Sample-Rate') !== '48000'
+        || response.headers.get('X-Audio-Channels') !== '2' || !response.body) throw new Error('声音格式不支持');
+    session.reader = response.body.getReader();
+    let pending = new Uint8Array(0), nextTime = audioContext.currentTime + .06;
+    while (audioSession === session) {
+      const { value, done } = await session.reader.read();
+      if (audioSession !== session) return;
+      if (done) throw new Error('声音中断，点击声音开关重连');
+      const bytes = new Uint8Array(pending.length + value.length);
+      bytes.set(pending); bytes.set(value, pending.length);
+      let offset = 0;
+      // 累积至少 20ms，每块不超过 40ms；允许 TCP 在任何字节处拆分立体声样本。
+      while (bytes.length - offset >= 3840) {
+        const frames = Math.min(1920, Math.floor((bytes.length - offset) / 4));
+        const now = audioContext.currentTime;
+        if (nextTime - now > .25) {
+          for (const source of session.nodes) { try { source.stop(); } catch (e) {} }
+          session.nodes.clear(); nextTime = now + .06;
+        }
+        if (nextTime < now + .01) nextTime = now + .06;
+        const buffer = audioContext.createBuffer(2, frames, 48000);
+        const left = buffer.getChannelData(0), right = buffer.getChannelData(1);
+        const view = new DataView(bytes.buffer, bytes.byteOffset + offset, frames * 4);
+        for (let i = 0; i < frames; i++) {
+          left[i] = view.getInt16(i * 4, true) / 32768;
+          right[i] = view.getInt16(i * 4 + 2, true) / 32768;
+        }
+        const source = audioContext.createBufferSource();
+        source.buffer = buffer; source.connect(audioContext.destination);
+        session.nodes.add(source); source.onended = () => { session.nodes.delete(source); source.disconnect(); };
+        source.start(nextTime); nextTime += frames / 48000;
+        offset += frames * 4;
+        paintSound();
+      }
+      pending = bytes.slice(offset);
+    }
+  } catch (error) {
+    if (audioSession !== session || session.controller.signal.aborted) return;
+    soundEnabled = false; stopSound(); paintSound(); audioContext?.suspend().catch(() => {});
+    say(error.message || '声音连接失败');
+  }
+}
+soundButton.addEventListener('click', () => {
+  soundEnabled = !soundEnabled;
+  syncSound();
+});
+
+// 每台手机独立串行发送；一台超时不阻塞另一台。移动只保留最新一个。
+const queue = [];
+let sending = false, finger = null, lastSent = 0;
+// 网页操作时占用设备 30 秒（剩不到 10 秒就续），优先级最低：任何程序要用都能直接接管；别人占着时网页只能看
+const OWNER = 'web', leaseUntil = new Map();
+function heldByOther(target = serial) {
+  const lease = phones.find(p => p.serial === target)?.lease;
+  return lease && lease.owner !== OWNER ? lease : null;
+}
+async function lease(target, signal) {
+  if ((leaseUntil.get(target) ?? 0) - performance.now() > 10000) return;
+  const r = await fetch('/lease' + q(target) + '&owner=' + OWNER, { method: 'POST', signal,
+    headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ ttl: 30, priority: 0 }) });
+  const data = await r.json().catch(() => ({}));
+  if (!r.ok) throw new Error(data.detail || '设备正被占用');
+  leaseUntil.set(target, performance.now() + 30000);
+}
+const activeInputs = new Set();
+function send(ev) {
+  ev = { ...ev, serial };
+  const tail = queue[queue.length - 1];
+  if (ev.type === 'move' && tail && tail.type === 'move' && tail.serial === ev.serial) queue[queue.length - 1] = ev; else queue.push(ev);
+  if (!activeInputs.has(ev.serial)) flush(ev.serial);
+}
+async function flush(target) {
+  activeInputs.add(target);
+  sending = true;
+  try {
+    while (queue.some(ev => ev.serial === target)) {
+      const index = queue.findIndex(ev => ev.serial === target);
+      const { serial: _, command = 'touch', ...ev } = queue.splice(index, 1)[0];
+      if (target === serial) lastSent = performance.now();
+      const controller = new AbortController(), timer = setTimeout(() => controller.abort(), 5000);
+      try {
+        if (ev.type !== 'up') await lease(target, controller.signal);
+        const r = await fetch('/' + command + q(target) + '&owner=' + OWNER, { method: 'POST', signal: controller.signal,
+          headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(ev) });
+        if (!r.ok) throw new Error((await r.json().catch(() => ({}))).detail || '操作失败');
+      } catch (e) {
+        say(e.name === 'AbortError' ? '操作超时' : (e.message || '操作失败'));
+        // 不重放失败动作；保留松手，丢弃已经过时的点击和移动。
+        for (let i = queue.length - 1; i >= 0; i--) {
+          if (queue[i].serial === target && queue[i].type !== 'up') queue.splice(i, 1);
+        }
+      } finally { clearTimeout(timer); }
+    }
+  } finally {
+    activeInputs.delete(target); sending = activeInputs.size > 0;
+  }
+}
+function toPhone(e) {
+  const r = screenEl.getBoundingClientRect();
+  const fx = Math.min(Math.max((e.clientX - r.left) / r.width, 0), 0.9999);
+  const fy = Math.min(Math.max((e.clientY - r.top) / r.height, 0), 0.9999);
+  dot.style.left = fx * 100 + '%'; dot.style.top = fy * 100 + '%';
+  // UHID 使用自然方向坐标，Android 会再按屏幕方向旋转；先做逆变换。
+  const rotation = phones.find(p => p.serial === serial)?.rotation ?? 0;
+  const [x, y] = rotation === 1 ? [1 - fy, fx] : rotation === 2 ? [1 - fx, 1 - fy] : rotation === 3 ? [fy, 1 - fx] : [fx, fy];
+  return { x: Math.min(phoneSize[0] - 1, Math.floor(x * phoneSize[0])),
+           y: Math.min(phoneSize[1] - 1, Math.floor(y * phoneSize[1])) };
+}
+function inputGeometryMatches() {
+  const phone = phones.find(p => p.serial === serial), image = feeds.get(serial)?.img;
+  if (!phone || !image?.naturalWidth) return false;
+  // 旧 API 的调用方仍可工作；新 API 未确认方向、或画面已旋转而状态未更新时先暂停新手势。
+  if (!Object.hasOwn(phone, 'rotation')) return true;
+  if (!Number.isInteger(phone.rotation)) return false;
+  const expected = phone.rotation % 2 ? phoneSize[1] / phoneSize[0] : phoneSize[0] / phoneSize[1];
+  return Math.abs(image.naturalWidth / image.naturalHeight / expected - 1) < .03;
+}
+function release() {
+  if (!finger) return;
+  finger = null; dot.classList.remove('on');
+  send({ type: 'up' });
+}
+screenEl.addEventListener('pointerdown', e => {
+  frameGeometry();
+  if (e.button !== 0 || finger || document.hidden || !feeds.get(serial)?.ready || !phones.find(p => p.serial === serial)?.connected) return;
+  if (!inputGeometryMatches()) { say('屏幕方向确认中，请稍候'); status(); return; }
+  const held = heldByOther();
+  if (held) { say(held.owner + ' 正在使用，只能看'); return; }
+  screenEl.setPointerCapture(e.pointerId);
+  finger = { id: e.pointerId, ...toPhone(e) };
+  dot.classList.add('on');
+  send({ type: 'down', x: finger.x, y: finger.y });
+});
+screenEl.addEventListener('pointermove', e => {
+  if (!finger || e.pointerId !== finger.id) return;
+  frameGeometry();
+  if (!finger) return;
+  if (!inputGeometryMatches()) { release(); status(); return; }
+  Object.assign(finger, toPhone(e));
+  send({ type: 'move', x: finger.x, y: finger.y });
+});
+screenEl.addEventListener('pointerup', release);
+screenEl.addEventListener('pointercancel', release);
+screenEl.addEventListener('contextmenu', e => e.preventDefault());
+// 按着不动时每秒报一次，服务端 3 秒没消息会当成断线自动松手
+setInterval(() => { if (finger && performance.now() - lastSent > 1000) send({ type: 'move', x: finger.x, y: finger.y }); }, 500);
+
+// 网页快捷键与触摸共用每台手机的发送队列，切换时仍发给原设备。
+for (const button of document.querySelectorAll('[data-key]')) button.addEventListener('click', () => {
+  if (button.disabled) return;
+  release(); send({ command: 'key', key: button.dataset.key });
+});
+tabs.addEventListener('keydown', event => {
+  const buttons = [...tabs.children], index = buttons.indexOf(document.activeElement);
+  if (index < 0 || !['ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(event.key)) return;
+  event.preventDefault();
+  const next = event.key === 'Home' ? 0 : event.key === 'End' ? buttons.length - 1
+    : (index + (event.key === 'ArrowRight' ? 1 : -1) + buttons.length) % buttons.length;
+  buttons[next].click(); buttons[next].focus();
+});
+$('retry').addEventListener('click', () => { status(); });
+$('shot').addEventListener('click', async () => {
+  if ($('shot').disabled) return;
+  release(); screenshotBusy = true; $('shotLabel').textContent = '截图中'; paintControls();
+  const target = serial, name = phones.find(p => p.serial === target)?.name || target;
+  const controller = new AbortController(), timer = setTimeout(() => controller.abort(), 15000);
+  try {
+    const response = await fetch('/shot' + q(target), { cache: 'no-store', signal: controller.signal });
+    if (!response.ok) throw new Error('截图失败，请稍后重试');
+    const blob = await response.blob();
+    if (!blob.type.startsWith('image/png')) throw new Error('截图格式不正确');
+    const url = URL.createObjectURL(blob), link = document.createElement('a');
+    link.href = url; link.download = 'DroidHub-' + name + '-' + new Date().toISOString().replace(/[:.]/g, '-') + '.png';
+    document.body.append(link); link.click(); link.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 30000);
+    say(name + ' 截图已保存');
+  } catch (error) { say(error.name === 'AbortError' ? '截图超时，请稍后重试' : error.message); }
+  finally { clearTimeout(timer); screenshotBusy = false; $('shotLabel').textContent = '截图'; paintControls(); }
+});
+const mainEl = document.querySelector('main'), toolsToggle = $('toolsToggle');
+function setTools(open) {
+  if (mainEl.dataset.toolsOpen === String(open)) return;
+  release();
+  mainEl.dataset.toolsOpen = String(open);
+  toolsToggle.setAttribute('aria-expanded', String(open));
+}
+toolsToggle.addEventListener('click', () => setTools(mainEl.dataset.toolsOpen !== 'true'));
+$('quickControls').addEventListener('click', event => { if (event.target.closest('button:not(:disabled)')) setTools(false); });
+document.addEventListener('pointerdown', event => {
+  if (mainEl.dataset.toolsOpen !== 'true' || event.target.closest('#quickControls, #toolsToggle')) return;
+  setTools(false);
+  // 点击画面收起菜单时，这一次点击不发送到手机。
+  if (event.target.closest('#screen')) { event.preventDefault(); event.stopPropagation(); }
+}, true);
+window.addEventListener('resize', () => setTools(false));
+function setImmersive(enabled) {
+  release(); setTools(false);
+  mainEl.classList.toggle('view-full', enabled);
+  for (const id of ['fullscreen', 'fullscreenMobile']) {
+    $(id).setAttribute('aria-pressed', String(enabled));
+    $(id).setAttribute('aria-label', enabled ? '退出全屏' : '进入全屏');
+  }
+  $('fullscreenLabel').textContent = enabled ? '退出' : '全屏';
+  $('fullscreenExit').hidden = !enabled;
+}
+let fullscreenBusy = false, nativeFullscreen = false;
+async function toggleFullscreen() {
+  if (fullscreenBusy) return;
+  fullscreenBusy = true;
+  try {
+    if (mainEl.classList.contains('view-full')) {
+      if (document.fullscreenElement) await document.exitFullscreen();
+      setImmersive(false);
+    } else {
+      setImmersive(true);
+      if (document.fullscreenEnabled && mainEl.requestFullscreen) {
+        try { await mainEl.requestFullscreen(); }
+        catch (error) { say('画面已铺满网页，浏览器保留地址栏'); }
+      }
+    }
+  } catch (error) { say('请使用浏览器的返回或退出全屏操作'); }
+  finally { fullscreenBusy = false; }
+}
+for (const id of ['fullscreen', 'fullscreenMobile', 'fullscreenExit']) $(id).addEventListener('click', toggleFullscreen);
+document.addEventListener('fullscreenchange', () => {
+  const active = !!document.fullscreenElement, exited = nativeFullscreen && !active;
+  nativeFullscreen = active;
+  if (active || exited) setImmersive(active);
+});
+document.addEventListener('keydown', event => {
+  if (event.key !== 'Escape') return;
+  if (mainEl.dataset.toolsOpen === 'true') { setTools(false); toolsToggle.focus(); }
+  else if (mainEl.classList.contains('view-full') && !document.fullscreenElement) setImmersive(false);
+});
+</script>
+</body>
+</html>

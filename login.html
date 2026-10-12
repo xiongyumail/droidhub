@@ -1,0 +1,71 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="color-scheme" content="light dark">
+<title>登录 · DroidHub</title>
+<style>
+  :root { --fg: #202938; --muted: #748092; --bg: #f4f6f8; --card: #fff; --line: #dfe5ec;
+          --accent: #2563eb; --on-accent: #fff; --bad: #b84d46; }
+  @media (prefers-color-scheme: dark) {
+    :root { --fg: #e8edf5; --muted: #96a2b5; --bg: #14181e; --card: #1e242d; --line: #303947;
+            --accent: #8cb2ff; --on-accent: #14181e; --bad: #f0958e; }
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; min-height: 100vh; display: flex; align-items: center; justify-content: center; padding: 16px;
+         background: var(--bg); color: var(--fg); font: 15px/1.5 -apple-system, "PingFang SC", "Microsoft YaHei", sans-serif; }
+  form { width: 100%; max-width: 320px; padding: 20px; background: var(--card); border: 1px solid var(--line); border-radius: 12px; }
+  h1 { margin: 0 0 16px; font-size: 17px; font-weight: 600; }
+  input { width: 100%; padding: 10px 12px; font: inherit; color: var(--fg); background: var(--bg);
+          border: 1px solid var(--line); border-radius: 8px; }
+  input:focus { outline: 2px solid var(--accent); outline-offset: -1px; }
+  button { width: 100%; margin-top: 12px; padding: 10px; font: inherit; font-weight: 600; color: var(--on-accent);
+           background: var(--accent); border: 0; border-radius: 8px; cursor: pointer; }
+  button:disabled { opacity: .6; cursor: default; }
+  p { min-height: 1.5em; margin: 8px 0 0; font-size: 13px; color: var(--bad); }
+  .hidden { display: none; }
+</style>
+</head>
+<body>
+<form id="form">
+  <h1>DroidHub</h1>
+  <input class="hidden" name="username" autocomplete="username" value="droidhub" tabindex="-1" aria-hidden="true">
+  <input id="password" type="password" name="password" autocomplete="current-password" placeholder="密码" aria-label="密码" required autofocus>
+  <button id="submit">登录</button>
+  <p id="error" role="alert"></p>
+</form>
+<script>
+const form = document.getElementById('form');
+const error = document.getElementById('error');
+const submit = document.getElementById('submit');
+
+// 登录后回到原页面；只接受本站地址
+function nextPage() {
+  try {
+    const url = new URL(new URLSearchParams(location.search).get('next') || '/', location.href);
+    if (url.origin === location.origin) return url.pathname + url.search + url.hash;
+  } catch (e) {}
+  return '/';
+}
+
+form.addEventListener('submit', async event => {
+  event.preventDefault();
+  submit.disabled = true;
+  error.textContent = '';
+  try {
+    const r = await fetch('/auth', { method: 'POST', headers: { 'Content-Type': 'application/json' },
+                                     body: JSON.stringify({ password: document.getElementById('password').value }) });
+    if (r.ok) {
+      location.replace(nextPage());
+      return;
+    }
+    error.textContent = r.status === 401 ? '密码错误' : '登录失败（' + r.status + '）';
+  } catch (e) {
+    error.textContent = '连接失败';
+  }
+  submit.disabled = false;
+});
+</script>
+</body>
+</html>

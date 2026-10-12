@@ -1,0 +1,6 @@
+{
+  "devices": [
+    {"name": "Phone", "serial": "替换成 adb devices 里的序列号"},
+    {"name": "Tablet", "address": "192.168.1.50:5555"}
+  ]
+}
