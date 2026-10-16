@@ -62,6 +62,8 @@ SCRCPY_VERSION = '2.4'
 SCRCPY_REMOTE = '/data/local/tmp/scrcpy-server.jar'
 SCRCPY_PORT = 27183
 STREAM_BITRATE = 8000000
+FRAME_START = 15         # /frame 冷启动投屏时等首帧的上限
+FRAME_WAIT_MAX = 10      # /frame?after= 最多等这么久
 STREAM_QUALITY = 4        # MJPEG 质量，2 最好 31 最差
 READ_TIMEOUT = 5
 SHELL_TIMEOUT = 120
@@ -82,7 +84,9 @@ log = logging.getLogger('droidhub')
 API = {
     'selector': '?serial=<真实序列号> 或 ?phone=<序列号/显示名称>，省略时用默认手机',
     'auth': '设置密码时：程序用 HTTP Basic（用户名任意）；浏览器在 /auth 登录，Cookie 一年有效',
-    'get': {'/phones': '手机列表', '/status': '连接状态', '/shot': 'PNG 截图',
+    'get': {'/phones': '手机列表', '/status': '连接状态', '/shot': 'PNG 截图；?x=&y=&w=&h= 只截一块（省略的边到屏幕边），只传覆盖的行，更快',
+            '/frame': '投屏的一帧 JPEG（长边 1600，有损）；?after=<上次的 X-Frame-Seq>&wait=1 等到新帧再返回。'
+                      '宽高取 8 的倍数，换算截图坐标时宽、高分别按比例；Android 11 及以下包含 FLAG_SECURE 界面；投屏没开时先开，约 1 秒',
             '/health': '服务健康及每台手机状态；至少一台连通为 200',
             '/stream': 'MJPEG 实时画面', '/audio': '应用播放声 PCM 流（s16le / 48000Hz / 双声道）',
             '/audio/status': '采音状态；查询不会启动采集', '/ui': '控件树 JSON；?format=xml 返回 XML',
@@ -448,12 +452,12 @@ class Phone:
     def do(self, fn, cancel=None, owner=None):
         return self.command(lambda p: fn(p.touch), cancel, keep_gesture=True, owner=owner)
 
-    def shot(self):
+    def shot(self, box=None):
         # 截图只读 ADB；触屏未就绪时也可尝试，不排队，不触发重连。
         if self.stop.is_set():
             raise RuntimeError('服务正在停止')
         try:
-            return self.device.shot()
+            return self.device.shot(box)
         except Exception as e:
             if connection_error(e):
                 self.failure(e)
@@ -765,6 +769,24 @@ class Stream:
                 return seq, None
             return self.seq, self.frame
 
+    def latest(self, after=None, wait=0.0):
+        """最新一帧 (seq, jpg, 帧龄秒)。画面静止时编码器不出新帧，最新一帧就是当前画面。
+        after 给了时最多等 wait 秒，等到序号不同于 after 的帧；等不到也返回最新一帧。还没有首帧时最多等 FRAME_START 秒。"""
+        with self.cond:
+            seq, cached = self.seq, self.frame
+        if cached is None:
+            deadline = time.monotonic() + FRAME_START
+            while cached is None:
+                seq, cached = self.wait(seq, timeout=max(0, min(.25, deadline - time.monotonic())))
+                if cached is None and time.monotonic() >= deadline:
+                    raise RuntimeError('画面启动超时，请重新连接')
+        if after is not None and seq == after and wait > 0:
+            self.wait(seq, timeout=wait)
+        with self.cond:
+            if self.frame is None:
+                raise RuntimeError(self.error or '画面已停止')
+            return self.seq, self.frame, time.monotonic() - self.frame_at
+
     def _publish(self, jpg):
         with self.cond:
             self.frame, self.seq, self.frame_at = jpg, self.seq + 1, time.monotonic()
@@ -911,6 +933,24 @@ class Stream:
                 ff.stdin.close()
             except OSError:
                 pass
+
+
+def shot_box(query):
+    """/shot 的区块参数 x、y、w、h（截图像素，当前方向）；都没给返回 None 截整屏。w、h 省略表示到边。"""
+    if not any(k in query for k in ('x', 'y', 'w', 'h')):
+        return None
+    values = []
+    for key in ('x', 'y', 'w', 'h'):
+        raw = query.get(key, [None])[0]
+        try:
+            value = int(raw) if raw is not None else None
+        except ValueError:
+            value = -1
+        if value is not None and not (0 <= value <= 100000) or key in ('w', 'h') and value == 0:
+            raise ValueError('%s 要是正整数像素' % key if key in ('w', 'h') else '%s 要是非负整数像素' % key)
+        values.append(value)
+    x, y, w, h = values
+    return x or 0, y or 0, w, h
 
 
 def num(body, key, default=None, cast=int):
@@ -1272,16 +1312,53 @@ class Handler(BaseHTTPRequestHandler):
         if path == '/stream':
             phone = self._phone()
             return phone and self._stream(phone)
+        if path == '/frame':
+            phone = self._phone()
+            return phone and self._frame(phone)
         if path == '/shot':
             phone = self._phone()
             if not phone:
                 return
             try:
-                png = phone.shot()
+                png = phone.shot(shot_box(parse_qs(urlparse(self.path).query)))
+            except ValueError as e:
+                return self._json(400, {'ok': False, 'detail': str(e)})
             except Exception as e:
                 return self._json(503, {'ok': False, 'detail': str(e)})
             return self._send(200, 'image/png', png)
         self._json(404, {'ok': False, 'detail': '没有这个接口'})
+
+    def _frame(self, phone):
+        """投屏的一帧 JPEG（长边 STREAM_MAX_SIZE）。投屏没开时先开，取完照常保留 STREAM_LINGER 秒，连续取帧不用冷启动。"""
+        query = parse_qs(urlparse(self.path).query)
+        try:
+            after = query.get('after', [None])[0]
+            after = int(after) if after is not None else None
+            wait = float(query.get('wait', ['1'])[0])
+            if not 0 <= wait <= FRAME_WAIT_MAX:
+                raise ValueError
+        except ValueError:
+            return self._json(400, {'ok': False, 'detail': 'after 要是整数，wait 要在 0–%d 秒' % FRAME_WAIT_MAX})
+        if not phone.touch or phone.error:
+            return self._json(503, {'ok': False, 'detail': '手机未连接：' + (phone.error or '')})
+        stream, joined = phone.stream, False
+        try:
+            stream.join()
+            joined = True
+            seq, jpg, age = stream.latest(after, wait)
+        except RuntimeError as e:
+            return self._json(503, {'ok': False, 'detail': str(e)})
+        finally:
+            if joined:
+                stream.leave()
+        self.send_response(200)
+        self.send_header('Content-Type', 'image/jpeg')
+        self.send_header('Content-Length', str(len(jpg)))
+        self.send_header('Cache-Control', 'no-store')
+        self.send_header('X-Frame-Seq', str(seq))
+        self.send_header('X-Frame-Age', '%.3f' % age)
+        self.end_headers()
+        self.wfile.write(jpg)
 
     def _stream(self, phone):
         client = parse_qs(urlparse(self.path).query).get('client', [None])[0]

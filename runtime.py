@@ -84,8 +84,10 @@ def connection_error(error):
 RAW_RGBA_8888 = 1
 
 
-def capture_png(adb):
-    """截图读取只依赖 ADB，既不创建触屏也不重连设备。"""
+def capture_png(adb, box=None):
+    """截图读取只依赖 ADB，既不创建触屏也不重连设备。box 为 (x, y, w, h) 时只截这一块，w、h 可为 None 表示到边。"""
+    if box:
+        return capture_box(adb, *box)
     # 手机端压 PNG 约 2.4 秒；拉原始帧（约 10 MB）在服务端压缩，合计约 1 秒。
     png = encode_raw(screencap(adb))
     if png is None:
@@ -97,10 +99,40 @@ def capture_png(adb):
 
 
 def screencap(adb, *args):
-    result = subprocess.run(adb + ['exec-out', 'screencap', *args], capture_output=True, timeout=15)
+    return exec_out(adb, ['screencap', *args])
+
+
+def exec_out(adb, command):
+    result = subprocess.run(adb + ['exec-out', *command], capture_output=True, timeout=15)
     if result.returncode:
         raise ConnectionFailure(result.stderr.decode('utf-8', 'replace').strip() or '手机截图命令失败')
     return result.stdout
+
+
+# 手机抓一帧约 0.2 秒，传整帧原始像素（约 10 MB）约 0.6 秒；区块只传覆盖的那几行，列在服务端裁。
+# 帧头用 dd 逐字节读，读完正好停在像素开头；行用 tail/head 按字节数取，管道短读不会错位（dd bs=行宽 会）。
+# 第一行回传宽、高、格式。Android 9 起帧头 16 字节，之前 12 字节。
+BOX_COMMAND = ('screencap | {{ n=16; [ "$(getprop ro.build.version.sdk)" -lt 28 ] && n=12; '
+               'set -- $(dd bs=1 count=$n 2>/dev/null | od -An -tu4); echo "$1 $2 $3"; '
+               '[ $# -ge 3 ] && [ {y} -lt "$2" ] && tail -c +$(({y} * $1 * 4 + 1)) | head -c $(({rows} * $1 * 4)); }}')
+
+
+def capture_box(adb, x, y, w, h):
+    rows = str(h) if h else '($2 - %d)' % y
+    header, _, pixels = exec_out(adb, [BOX_COMMAND.format(y=y, rows=rows)]).partition(b'\n')
+    try:
+        width, height, pixel_format = map(int, header.split())
+    except ValueError:
+        raise RuntimeError('截图失败') from None
+    if pixel_format != RAW_RGBA_8888:
+        raise RuntimeError('区块截图只支持 RGBA_8888 像素格式')
+    w, h = w or width - x, h or height - y
+    if w <= 0 or h <= 0 or x + w > width or y + h > height:
+        raise ValueError('区块超出屏幕（%dx%d）' % (width, height))
+    stride = width * 4
+    if len(pixels) != h * stride:
+        raise RuntimeError('截图失败')
+    return encode_png(w, h, (pixels[i * stride + x * 4:i * stride + (x + w) * 4] for i in range(h)))
 
 
 def encode_raw(raw):
@@ -115,15 +147,19 @@ def encode_raw(raw):
     if pixel_format != RAW_RGBA_8888 or not width or not height or header not in (12, 16):
         return None
     pixels = memoryview(raw)
+    return encode_png(width, height, (pixels[offset:offset + stride] for offset in range(header, len(raw), stride)))
+
+
+def encode_png(width, height, rows):
+    """RGBA 逐行像素编成 PNG。"""
     # 每行前加过滤类型 0；level 1 在服务器上约 0.1 秒，再高压缩率只多省一成体积。
-    rows = b''.join(part for offset in range(header, len(raw), stride)
-                    for part in (b'\0', pixels[offset:offset + stride]))
+    data = b''.join(part for row in rows for part in (b'\0', row))
 
     def chunk(kind, data):
         return struct.pack('>I', len(data)) + kind + data + struct.pack('>I', zlib.crc32(kind + data))
 
     return (b'\x89PNG\r\n\x1a\n' + chunk(b'IHDR', struct.pack('>2I5B', width, height, 8, 6, 0, 0, 0))
-            + chunk(b'IDAT', zlib.compress(rows, 1)) + chunk(b'IEND', b''))
+            + chunk(b'IDAT', zlib.compress(data, 1)) + chunk(b'IEND', b''))
 
 
 def run_command(args, timeout, cancel=None):

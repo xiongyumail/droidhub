@@ -423,8 +423,8 @@ class Device:
     def prop(self, name):
         return self.shell(['getprop', prop_name(name)], timeout=3)
 
-    def shot(self):
-        return capture_png(self.adb)
+    def shot(self, box=None):
+        return capture_png(self.adb, box)
 
     def launch(self, args):
         if '-p' in args:

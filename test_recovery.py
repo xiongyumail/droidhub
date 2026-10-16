@@ -79,6 +79,38 @@ class ScreenshotTests(unittest.TestCase):
             self.assertEqual(calls, [['screencap'], ['screencap', '-p']])
 
 
+    def test_box_reads_only_covered_rows_and_crops_columns(self):
+        width, height = 6, 5
+        pixels = bytes(range(256)) * 2
+        full = pixels[:width * height * 4]
+        rows = full[2 * width * 4:4 * width * 4]
+        result = subprocess.CompletedProcess([], 0, stdout=b'6 5 1\n' + rows, stderr=b'')
+        with patch('runtime.subprocess.run', return_value=result) as run:
+            png = runtime.capture_png(['adb'], (1, 2, 3, 2))
+        command = run.call_args.args[0]
+        self.assertEqual(command[:2], ['adb', 'exec-out'])
+        self.assertIn('tail -c +$((2 * $1 * 4 + 1)) | head -c $((2 * $1 * 4))', command[2])
+        expected = b''.join(full[(r * width + 1) * 4:(r * width + 4) * 4] for r in (2, 3))
+        self.assertEqual(png_pixels(png), (3, 2, expected))
+
+    def test_box_to_edges_and_errors(self):
+        def run(stdout, box):
+            result = subprocess.CompletedProcess([], 0, stdout=stdout, stderr=b'')
+            with patch('runtime.subprocess.run', return_value=result) as call:
+                return runtime.capture_png(['adb'], box), call.call_args.args[0][2]
+        png, command = run(b'2 3 1\n' + b'\1' * 8, (0, 2, None, None))
+        self.assertIn('head -c $((($2 - 2) * $1 * 4))', command)
+        self.assertEqual(png_pixels(png), (2, 1, b'\1' * 8))
+        with self.assertRaisesRegex(ValueError, '区块超出屏幕（2x3）'):
+            run(b'2 3 1\n', (1, 0, 2, 1))
+        with self.assertRaisesRegex(RuntimeError, '^截图失败$'):
+            run(b'\n', (0, 0, 1, 1))       # 安全界面：screencap 没有输出
+        with self.assertRaisesRegex(RuntimeError, '^截图失败$'):
+            run(b'2 3 1\n' + b'\0' * 7, (0, 0, 2, 1))
+        with self.assertRaisesRegex(RuntimeError, 'RGBA_8888'):
+            run(b'2 3 4\n', (0, 0, 1, 1))
+
+
 class TouchRecoveryTests(unittest.TestCase):
     def test_screenshot_reads_once_and_reports_offline_without_resetting(self):
         result = subprocess.CompletedProcess([], 1, stdout=b'', stderr=b'error: device offline')

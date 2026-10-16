@@ -6,6 +6,7 @@ import socket
 import stat
 import tempfile
 import threading
+import time
 import unittest
 from unittest.mock import patch
 
@@ -165,6 +166,46 @@ class HttpInterfaceTests(unittest.TestCase):
         self.assertEqual((code, body['activity']), (200, 'a/b'))
         self.p.device.views.assert_called_once_with('com.example.app')
         self.assertEqual(self.request('/views?package=bad;pkg', method='GET')[0], 400)
+
+    def test_shot_box_parameters(self):
+        self.p.device.shot.return_value = b'PNG'
+        self.assertEqual(self.request('/shot?x=1&y=2&w=3&h=4', method='GET'), (200, 'PNG'))
+        self.p.device.shot.assert_called_with((1, 2, 3, 4))
+        self.request('/shot?y=1500', method='GET')
+        self.p.device.shot.assert_called_with((0, 1500, None, None))
+        self.request('/shot', method='GET')
+        self.p.device.shot.assert_called_with(None)
+        for query in ('w=0', 'x=-1', 'y=a', 'h=1.5'):
+            status, data = self.request('/shot?' + query, method='GET')
+            self.assertEqual(status, 400, query)
+        self.p.device.shot.side_effect = ValueError('区块超出屏幕（1080x2340）')
+        self.assertEqual(self.request('/shot?y=3000', method='GET'),
+                         (400, {'ok': False, 'detail': '区块超出屏幕（1080x2340）'}))
+
+    def test_frame_starts_stream_and_waits_for_newer_frame(self):
+        frames = []
+        def run(stream):
+            for jpg in frames:
+                stream._publish(jpg)
+        self.p.stream = app.Stream(self.p, 27183)
+        with patch.object(app.Stream, '_run', run):
+            frames.append(b'jpeg-1')
+            connection = http.client.HTTPConnection('127.0.0.1', self.server.server_port, timeout=5)
+            connection.request('GET', '/frame')
+            response = connection.getresponse()
+            self.assertEqual((response.status, response.read()), (200, b'jpeg-1'))
+            self.assertEqual(response.getheader('Content-Type'), 'image/jpeg')
+            seq = response.getheader('X-Frame-Seq')
+            connection.close()
+            self.assertEqual(self.p.stream.viewers, 0)
+            # 静止画面：等满 wait 仍返回同一帧
+            started = time.monotonic()
+            self.assertEqual(self.request('/frame?after=%s&wait=0.3' % seq, method='GET'), (200, 'jpeg-1'))
+            self.assertGreaterEqual(time.monotonic() - started, 0.25)
+            threading.Timer(0.1, self.p.stream._publish, [b'jpeg-2']).start()
+            self.assertEqual(self.request('/frame?after=%s&wait=2' % seq, method='GET'), (200, 'jpeg-2'))
+        for query in ('wait=11', 'wait=-1', 'after=x'):
+            self.assertEqual(self.request('/frame?' + query, method='GET')[0], 400, query)
 
     def test_stop_rejects_protected_package_before_phone(self):
         code, _ = self.request('/stop', {'package': 'com.miui.home'})
